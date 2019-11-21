@@ -1,0 +1,24 @@
+NUMBER_OF_TRAITS
+5
+MAP_FILE
+chromosome_inf.txt
+ALLELE_EFFECTS_FILE
+allele_effect.txt
+PHASED_GENOTYPE_FILE
+phas_chr_1.txt
+RECOMBINATION_GROUP_FILE
+group.txt
+GENETIC_DISTANCE_UNIT
+reco
+GAMETIC_VAR
+TRUE             !T or TRUE
+GAMETIC_(CO)VAR
+T                !T or TRUE
+HOM
+T                !T or TRUE
+CRV
+T                !T or TRUE
+GEBV
+T                !T or TRUE
+OUTPUT_NAME
+out_1
