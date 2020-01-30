@@ -28,6 +28,7 @@
 ! T or TRUE
 ! OUTPUT_NAME
 ! name
+! OPTION PLINK
 
 program gamevar
 
@@ -43,14 +44,16 @@ character(1)::line_G
 character(10),allocatable::group_re(:)
 character(22):: parfile,map_imput,allele_imput,geno_imput,re_group_imput,outputfile,reco_imput
 logical::C_gamevar=.false.,C_gamecovar=.false.,C_hom=.false.,C_crv=.false.,C_ebv=.false.,C_reco=.false.
+logical::C_PLINK=.false.
 
 !----------------- imput variables----------------------!
 integer:: imp,io_stat,n_snp_G,n_snp,n_eff,n_anim,n_hap,chr,position,&
-i,j,k,t,t1,reco_count,reco_count1,traits_count,traits_count1
+i,j,k,t,t1,reco_count,reco_count1,traits_count,traits_count1,&
+br,nc_PED,SEX,PED_F,PED_M
 integer,allocatable::matrix_count(:),ID_vec(:),group_re_c(:)
-real::ID_R
+real::ID_R,PED_P
 real,allocatable::reco(:,:),reco_before(:),traits(:,:)
-character(40)::marker ! changes according to the size
+character(40)::marker,PED_FA  ! changes according to the size
 character(200)::outformat=''
 
 !---------------- erro variables -----------------------!
@@ -60,8 +63,8 @@ logical::nsort_status=.false.,dchr_status=.false.,nsort_rec_status=.false.,&
 colrec_ex_status=.false.,coltrait_ex_status=.false.,n_id_stat=.false.
 
 !------------------ analyses variables ----------------!
-integer::re,n
-integer,allocatable::genotype(:),genobefore(:)
+integer::re,n, a,cont_sta
+integer,allocatable::genotype(:),genobefore(:),genotypeT(:)
 real,allocatable::matri_alle_effe(:,:),ebv_results(:),reco_mat_k(:,:),reco_matrix_resu(:,:),&
 m_phase(:,:),result_CRV(:),result_HOM(:)
 real*10,allocatable::result_GAV(:)
@@ -91,7 +94,9 @@ call inquire_file()
 
 open(unit=3,file=map_imput,status='old') !chr,marker,position,reco => No head
 open(unit=4,file=allele_imput,status='old') ! effects => No head
-open(unit=5,file=re_group_imput,status='old') !group,ID => No read
+if (.not. C_PLINK) then
+    open(unit=5,file=re_group_imput,status='old')
+endif
 open(unit=7,file=geno_imput,status='old') ! ID, genotype => No head
 
 n_snp=0
@@ -139,28 +144,40 @@ if(traits_count==n_eff .or. traits_count1<n_eff) coltrait_ex_status=.TRUE.
 rewind(4)
 
 n_anim=0
-do
-    read(5,*,iostat=io_stat) !group,ID
-    if(io_stat/=0) exit
-    n_anim=n_anim+1
-enddo
-rewind(5)
+if (C_PLINK) then
+    do
+       read(7,*,iostat=io_stat) !group,ID => no header
+        if(io_stat/=0) exit
+        n_anim=n_anim+1
+    enddo
+    rewind(7)
+else
+	do
+		read(5,*,iostat=io_stat) !group,ID
+		if(io_stat/=0) exit
+		n_anim=n_anim+1
+	enddo
+	rewind(5)
+endif
 
-allocate(group_re(n_anim))
-allocate(group_re_c(n_anim))
-allocate(matrix_count(n_anim))
-allocate(ID_vec(n_anim))
-do I=1,(n_anim)
-    read(5,*)group_re(I),ID_vec(I)
-    matrix_count(I)=I
-enddo
+if (C_PLINK) then
+    k=1
+else
+	allocate(group_re(n_anim))
+	allocate(group_re_c(n_anim))
+	allocate(matrix_count(n_anim))
+	allocate(ID_vec(n_anim))
+	do I=1,(n_anim)
+		read(5,*)group_re(I),ID_vec(I)
+		matrix_count(I)=I
+	enddo
 
-k=0
-t=0
-do
-    if (sum(matrix_count)==0) exit
-        do i=1,n_anim
-            if(matrix_count(i)>0) exit
+	k=0
+	t=0
+	do
+		if (sum(matrix_count)==0) exit
+		do i=1,n_anim
+           if(matrix_count(i)>0) exit
         enddo
         t=t+1
         if(matrix_count(i)>0) then
@@ -172,9 +189,11 @@ do
             enddo
         endif
         k=k+1
- enddo
-deallocate(matrix_count)
-deallocate(group_re)
+	enddo
+	deallocate(matrix_count)
+	deallocate(group_re)
+	
+endif
 
 allocate(reco(n_snp,k))
 allocate(reco_before(k))
@@ -184,7 +203,11 @@ reco_count=0
 reco_count1=0
 
 do I=1,n_snp
-    read(3,*,iostat=io_stat) chr,marker,position,reco(I,:)
+    if (C_PLINK) then
+        read(3,*,iostat=io_stat) chr,marker,reco(I,1),position ! aqui
+    else
+		read(3,*,iostat=io_stat) chr,marker,position,reco(I,:)
+	endif
     if(io_stat/=0) exit
     if(position<pos_before) nsort_status=.TRUE.
     if(chr_before/=chr) dchr_status=.TRUE.
@@ -210,20 +233,27 @@ do I=1,n_snp
 deallocate(reco_before)
 if(reco_count==n_snp .or. reco_count1<n_snp) colrec_ex_status=.TRUE.
 
-n_snp_G=0
+n_snp_G=0;br=0; nc_PED=0 
 do
     read(7,'(a)',advance='no',iostat=io_stat) line_G
     if (is_iostat_eor(io_stat)) then
         exit
     else
         n_snp_G = n_snp_G+1
+		if (C_PLINK .and. line_g==' ') then; br=br+1
+            if(br==6) nc_PED=n_snp_G-1
+        endif
     end if
 end do
 rewind(7)
 
-read(7,*,iostat=io_stat) ID_R
-rewind(7)
-n_snp_G=n_snp_G-ceiling(log10(ID_R+1))-1
+if (C_PLINK) then
+    n_snp_G=((n_snp_G-nc_PED)/2)/2
+else 
+	read(7,*,iostat=io_stat) ID_R
+	rewind(7)
+	n_snp_G=n_snp_G-ceiling(log10(ID_R+1))-1
+endif
 
 
 allocate(matri_alle_effe(n_snp,ntraits))
@@ -239,6 +269,7 @@ call warnings()
 n_hap=0
 allocate(genotype(n_snp))
 allocate(genobefore(n_snp))
+if(C_PLINK) allocate(genotypeT(2*n_snp))
 
 allocate(ebv_results(ntraits))
 allocate(result_CRV(ntraits))
@@ -310,6 +341,21 @@ print*
 i=1
 j=1
 do
+	a=0
+    if (C_PLINK) then
+        read(7,*,iostat=io_stat) PED_FA,ID_G,PED_F,PED_M,SEX,PED_P,genotypeT(:)
+        if(io_stat/=0) exit
+        n_hap=n_hap+1
+        genotypeT=2*genotypeT-2
+        do while (a<(2*n_snp))
+            genobefore(a/2+1)=genotypeT(a+2)
+            a=a+1
+            genotype((a+1)/2)=genotypeT(a)
+            a=a+1
+        enddo
+        write(fake,'(i0)') ID_G
+        cont_sta=1
+    else
 write(outformat,'(a,i0,a,i0,a)') '(i',ceiling(log10(real(ID_vec(i))+1)),',1x,',n_snp,'i1)'
     read(7,outformat,iostat=io_stat) ID_G,genotype(:) ! ID, genotype => No head
         if(io_stat/=0) exit
@@ -319,132 +365,146 @@ write(outformat,'(a,i0,a,i0,a)') '(i',ceiling(log10(real(ID_vec(i))+1)),',1x,',n
 
         if(MOD(j,2) .eq. 0) then
             write(fake,'(i0)') ID_vec(i)
+			cont_sta=1
+        else
+            cont_sta=2
+        endif
+    endif
 
-            if (C_gamevar .or. C_gamecovar .or. C_crv) then
-                do n=1,n_snp
-                    m_phase(:,n)=(genotype(n)-1)*(genotype-1)
+    if(cont_sta==1) then
+			
+        if (C_gamevar .or. C_gamecovar .or. C_crv) then
+            do n=1,n_snp
+                m_phase(:,n)=(genotype(n)-1)*(genotype-1)
+            enddo
+			
+			if (C_PLINK) then
+                m_phase=m_phase*reco_matrix_resu(1:n_snp,1:n_snp)
+            else
+				if (k<7) then
+					m_phase=m_phase*reco_matrix_resu(((group_re_c(I)-1)*n_snp+1):(k*n_snp),1:n_snp)
+				else
+					call reco_matrix(group_re_c(I),reco_imput)
+					m_phase=m_phase*reco_mat_k
+				endif
+			endif
+			do n=1,n_snp
+				m_phase(n,n)=0.25
+				if(genotype(n)==genobefore(n)) then
+					m_phase(n,:)=0
+					m_phase(:,n)=0
+				endif
+            enddo
+            if(C_gamecovar) then
+                re=ntraits+1
+                do t=1,ntraits
+                    do t1=1,ntraits
+                        if(t==t1) then
+                            result_GAV(t)=dot_product(matmul(traits(:,t),m_phase),traits(:,t))
+                        endif
+                        if(t<t1) then
+                            result_GAV(re)=dot_product(matmul(traits(:,t),m_phase),traits(:,t1))
+                            re=re+1
+                        endif
+                    enddo
                 enddo
-                if (k<7) then
-                    m_phase=m_phase*reco_matrix_resu(((group_re_c(I)-1)*n_snp+1):(k*n_snp),1:n_snp)
-                else
-                    call reco_matrix(group_re_c(I),reco_imput)
-                    m_phase=m_phase*reco_mat_k
-                endif
-                do n=1,n_snp
-                    m_phase(n,n)=0.25
-                    if(genotype(n)==genobefore(n)) then
-                        m_phase(n,:)=0
-                        m_phase(:,n)=0
-                    endif
+            else
+                do t=1,ntraits
+                    result_GAV(t)=dot_product(matmul(traits(:,t),m_phase),traits(:,t))
                 enddo
-                if(C_gamecovar) then
-                    re=ntraits+1
-                    do t=1,ntraits
-                        do t1=1,ntraits
-                            if(t==t1) then
-                                result_GAV(t)=dot_product(matmul(traits(:,t),m_phase),traits(:,t))
-                            endif
-                            if(t<t1) then
-                                result_GAV(re)=dot_product(matmul(traits(:,t),m_phase),traits(:,t1))
-                                re=re+1
-                            endif
-                        enddo
-                    enddo
-                    else
-                    do t=1,ntraits
-                        result_GAV(t)=dot_product(matmul(traits(:,t),m_phase),traits(:,t))
-                    enddo
-                endif
-
-                if (C_gamevar .or. C_gamecovar) then
-                    ncharvar=0
-                    ncharvar=len_trim(ADJUSTL(fake))
-                    linhaVAR(1:(ncharvar+1))=fake
-                    ncharvar=ncharvar+2
-
-                    do t=1,(ntraits+(ntraits*ntraits-ntraits)/2)
-                        write(fake1_var,'(F15.5)') result_GAV(t) ! changes according to the size
-                        nchar2var=len_trim(ADJUSTL(fake1_var))
-                        linhaVAR(ncharvar:(ncharvar+nchar2var))=ADJUSTL(fake1_var)
-                        ncharvar=ncharvar+nchar2var+1
-                    enddo
-
-                    write(1001,*) linhaVAR(1:ncharvar-2)
-                    if(i==1 .or. i==10 .or. i==1000 .or. i==1000000 .or. i==1000000) then
-                        print*,'Animal  ..........................................',i
-                    endif
-                endif
             endif
 
-            genobefore=((genobefore+genotype)/2)-1
+            if (C_gamevar .or. C_gamecovar) then
+                ncharvar=0
+                ncharvar=len_trim(ADJUSTL(fake))
+                linhaVAR(1:(ncharvar+1))=fake
+                ncharvar=ncharvar+2
 
-            if (C_ebv) then
-                do t=1,ntraits
-                    ebv_results(t)=dot_product(genobefore,matri_alle_effe(:,t))
+                do t=1,(ntraits+(ntraits*ntraits-ntraits)/2)
+                    write(fake1_var,'(F15.5)') result_GAV(t) ! changes according to the size
+                    nchar2var=len_trim(ADJUSTL(fake1_var))
+                    linhaVAR(ncharvar:(ncharvar+nchar2var))=ADJUSTL(fake1_var)
+                    ncharvar=ncharvar+nchar2var+1
                 enddo
-                ncharebv=0
-                ncharebv=len_trim(ADJUSTL(fake))
-                linhaEBV(1:(ncharebv+1))=fake
-                ncharebv=ncharebv+2
-                do t=1,ntraits
-                    write(fake1_ebv,'(F15.5)') ebv_results(t) ! changes according to the size
-                    nchar2ebv=len_trim(ADJUSTL(fake1_ebv))
-                    linhaEBV(ncharebv:(ncharebv+nchar2ebv))=ADJUSTL(fake1_ebv)
-                    ncharebv=ncharebv+nchar2ebv+1
-                enddo
-                write(1020,*) linhaEBV(1:ncharebv-2)
+
+                write(1001,*) linhaVAR(1:ncharvar-2)
+                if(i==1 .or. i==10 .or. i==1000 .or. i==1000000 .or. i==1000000) then
+                    print*,'Animal  ..........................................',i
+                endif
             endif
+        endif
+
+        genobefore=((genobefore+genotype)/2)-1
+
+        if (C_ebv) then
+            do t=1,ntraits
+                ebv_results(t)=dot_product(genobefore,matri_alle_effe(:,t))
+            enddo
+            ncharebv=0
+            ncharebv=len_trim(ADJUSTL(fake))
+            linhaEBV(1:(ncharebv+1))=fake
+            ncharebv=ncharebv+2
+            do t=1,ntraits
+                write(fake1_ebv,'(F15.5)') ebv_results(t) ! changes according to the size
+                nchar2ebv=len_trim(ADJUSTL(fake1_ebv))
+                linhaEBV(ncharebv:(ncharebv+nchar2ebv))=ADJUSTL(fake1_ebv)
+                ncharebv=ncharebv+nchar2ebv+1
+            enddo
+            write(1020,*) linhaEBV(1:ncharebv-2)
+        endif
 
 	    genobefore=genobefore*genobefore
 
-            if (C_hom) then
-                do t=1,ntraits
-                    result_HOM(t)=dot_product(genobefore,(matri_alle_effe(:,t)*matri_alle_effe(:,t)))
-                enddo
-                nchar=0
-                nchar=len_trim(ADJUSTL(fake))
-                linhaHOM(1:(nchar+1))=fake
-                nchar=nchar+2
-                do t=1,ntraits
-                    write(fake1,'(F15.5)') result_HOM(t) ! changes according to the size
-                    nchar2=len_trim(ADJUSTL(fake1))
-                    linhaHOM(nchar:(nchar+nchar2))=ADJUSTL(fake1)
-                    nchar=nchar+nchar2+1
-                enddo
-                write(1010,*)linhaHOM(1:nchar-2)
-            endif
-
-            if (C_crv) then
-                !genobefore=genobefore*genobefore
-                if(C_hom) then
-		    do t=1,ntraits
-			 result_CRV(t)=sqrt(result_GAV(t))/(sqrt(0.5*(result_HOM(t))+result_GAV(t)))
-		    enddo
-		else
-		   do t=1,ntraits
-                        result_CRV(t)=dot_product(genobefore,(matri_alle_effe(:,t)*matri_alle_effe(:,t)))
-                        result_CRV(t)=sqrt(result_GAV(t))/(sqrt(0.5*(result_CRV(t))+result_GAV(t)))
-                   enddo
-		endif
-                nchar=0
-                nchar=len_trim(ADJUSTL(fake))
-                linhaCRV(1:(nchar+1))=fake
-                nchar=nchar+2
-                do t=1,ntraits
-                    write(fake1,'(F10.2)') result_CRV(t) ! changes according to the size
-                    nchar2=len_trim(ADJUSTL(fake1))
-                    linhaCRV(nchar:(nchar+nchar2))=ADJUSTL(fake1)
-                    nchar=nchar+nchar2+1
-                enddo
-                write(1005,*)linhaCRV(1:nchar-2)
-            endif
-
-            i=i+1
+        if (C_hom) then
+            do t=1,ntraits
+                result_HOM(t)=dot_product(genobefore,(matri_alle_effe(:,t)*matri_alle_effe(:,t)))
+            enddo
+            nchar=0
+            nchar=len_trim(ADJUSTL(fake))
+            linhaHOM(1:(nchar+1))=fake
+            nchar=nchar+2
+            do t=1,ntraits
+                write(fake1,'(F10.2)') result_HOM(t) ! changes according to the size
+                nchar2=len_trim(ADJUSTL(fake1))
+                linhaHOM(nchar:(nchar+nchar2))=ADJUSTL(fake1)
+                nchar=nchar+nchar2+1
+            enddo
+            write(1010,*)linhaHOM(1:nchar-2)
         endif
-    genobefore=genotype
-    j=j+1
+
+		if (C_crv) then
+            if(C_hom) then
+				do t=1,ntraits
+					result_CRV(t)=sqrt(result_GAV(t))/(sqrt(0.5*(result_HOM(t))+result_GAV(t)))
+				enddo
+			else
+				do t=1,ntraits
+                    result_CRV(t)=dot_product(genobefore,(matri_alle_effe(:,t)*matri_alle_effe(:,t)))
+                    result_CRV(t)=sqrt(result_GAV(t))/(sqrt(0.5*(result_CRV(t))+result_GAV(t)))
+                enddo
+			endif
+            nchar=0
+            nchar=len_trim(ADJUSTL(fake))
+            linhaCRV(1:(nchar+1))=fake
+            nchar=nchar+2
+            do t=1,ntraits
+                write(fake1,'(F10.2)') result_CRV(t) ! changes according to the size
+                nchar2=len_trim(ADJUSTL(fake1))
+                linhaCRV(nchar:(nchar+nchar2))=ADJUSTL(fake1)
+                nchar=nchar+nchar2+1
+            enddo
+            write(1005,*)linhaCRV(1:nchar-2)
+        endif
+            i=i+1
+    endif
+    if(.not. C_PLINK) genobefore=genotype
+    if(.not. C_PLINK) j=j+1
 enddo
 rewind(7)
+if(C_PLINK) then
+    deallocate(genotypeT)
+    n_hap=2*n_hap
+endif
 deallocate(reco_matrix_resu)
 print *
 print *,'Number of Haplotypes analysed:....................',n_hap
@@ -541,8 +601,10 @@ subroutine read_par_file()
 
 implicit none
 
-integer :: out_test
+integer :: out_test,io_statP 
 character(4):: stat_var,stat_covar,stat_hom,stat_crv,stat_ebv
+character(6)::OPTI
+character(12)::stat_PLINK
 
 print *
 print *, 'OPTIONS:'
@@ -556,7 +618,9 @@ read(2,*) allele_imput;print *,'Allele Effects File: ',allele_imput
 read(2,*)
 read(2,*) geno_imput;print *,'Phased Genotype File: ',geno_imput
 read(2,*)
-read(2,*) re_group_imput;print *,'Recombination Group File: ',re_group_imput
+read(2,*)re_group_imput
+if (re_group_imput=='GENETIC_DISTANCE_UNIT') then; re_group_imput='NO'; BACKSPACE(2);endif
+print *,'Recombination Group File: ',re_group_imput
 read(2,*)
 read(2,*) reco_imput; if(reco_imput=='morgans') then
         C_reco=.true.
@@ -585,6 +649,19 @@ print *
 read(2,*,IOSTAT=out_test) outputfile; if (out_test==-1) then
     outputfile='youforgotitFDP';endif
 print*,'output file: ',outputfile
+read(2,*,iostat=io_statP)OPTI,stat_PLINK
+print *
+if(io_statP==0 .and. OPTI== "OPTION" .and. stat_PLINK=='PLINK') then
+    print *
+    print *, OPTI,' ',stat_PLINK
+    print *
+    C_PLINK=.true.; print *, 'Reading PLINK Format ...'; 
+endif
+if(re_group_imput=='NO' .and. io_statP/=0) then
+    print *
+    print *,' The recombination group file must to be provided'
+print *
+endif
 end subroutine
 
 !-------------------------------inquire files-------------------------------------!
@@ -597,6 +674,7 @@ inquire (file=map_imput,exist=exi_map)
 inquire (file=allele_imput,exist=exi_alle)
 inquire (file=geno_imput,exist=geno_exi)
 inquire (file=re_group_imput,exist=group_exi)
+if (C_PLINK) group_exi=.TRUE.
 
 if(.NOT. (exi_map) .OR. .NOT. (exi_alle) .OR. .NOT. (geno_exi) .OR. .NOT. (group_exi)) then
     print *
