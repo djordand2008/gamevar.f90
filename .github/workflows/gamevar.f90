@@ -829,18 +829,13 @@ do i=1,ntraits
 enddo
 
 if (C_gamecovar) then
-    fi=0
-    do i=1,(ntraits-1)
-        do j=(i+1),ntraits
-            if (i<j) then
-                ir=i
-                jr=j
-                fi=fi+ceiling(log10(ir+1))+ceiling(log10(jr+1))
-            endif
-        enddo
-    enddo
-
-    allocate(character(len=((ntraits*ntraits-ntraits)/2)*8+fi)::te_pp)
+   if (ntraits<10) then
+   	allocate(character(len=((ntraits*ntraits-ntraits)/2)*10-1)::te_pp)
+   else if (ntraits<100) then
+allocate(character(len=((ntraits*ntraits-ntraits)/2)*8-1+((ntraits-1)*9)+2*((ntraits-1)*(ntraits-9)))::te_pp)
+   else
+   	print *, 'More than 100 TRAITS => ERROR'
+   endif
     fi=0
     do i=1,(ntraits-1)
         do j=(i+1),ntraits
