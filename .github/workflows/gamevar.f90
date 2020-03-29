@@ -38,9 +38,9 @@ implicit none
 character(5):: version= '1.0'
 character(13):: date='10 May 2019'
 
-!----------------- parameter file reads ----------------!
+!----------------- parameter file  ---------------------!
 integer:: ntraits
-character(1)::line_G
+character(1)::line_G,line_MAP
 character(10),allocatable::group_re(:)
 character(22):: parfile,map_imput,allele_imput,geno_imput,re_group_imput,outputfile,reco_imput
 logical::C_gamevar=.false.,C_gamecovar=.false.,C_hom=.false.,C_crv=.false.,C_ebv=.false.,C_reco=.false.
@@ -56,13 +56,13 @@ real,allocatable::reco(:,:),reco_before(:),traits(:,:)
 character(40)::marker,PED_FA  ! changes according to the size
 character(200)::outformat=''
 
-!---------------- erro variables -----------------------!
+!---------------- error variables -----------------------!
 integer::pos_before=-1,chr_before,ID_G
 character(len=:), allocatable :: test_p,te_pp
 logical::nsort_status=.false.,dchr_status=.false.,nsort_rec_status=.false.,&
 colrec_ex_status=.false.,coltrait_ex_status=.false.,n_id_stat=.false.
 
-!------------------ analyses variables ----------------!
+!------------------ analysis variables ----------------!
 integer::re,n, a,cont_sta
 integer,allocatable::genotype(:),genobefore(:),genotypeT(:)
 real,allocatable::matri_alle_effe(:,:),ebv_results(:),reco_mat_k(:,:),reco_matrix_resu(:,:),&
@@ -121,9 +121,9 @@ if(n_snp==0 .or. n_eff==0 .or. n_snp/=n_eff) then
 	print *
         if(n_snp==0) print*,'    Problem to read the SNP file   '
 	if(n_eff==0) print*,'    Problem to read the allele effects file   '
-	if(n_snp/=n_eff) print*,'    Numbers of lici with effects and SNPs are different   '
+	if(n_snp/=n_eff) print*,'    Numbers of loci with effects and SNPs are different   '
 	print *
-	print*,'    gamevar.f90 has sttoped    '
+	print*,'    gamevar.f90 has been stopped    '
 	print *
 	print*,'*------------------------------------------------------------*'
 	print *
@@ -202,9 +202,33 @@ reco_before=0
 reco_count=0
 reco_count1=0
 
+do
+    read(3,'(a)',advance='no',iostat=io_stat) line_MAP
+    if (is_iostat_eor(io_stat)) then
+        exit
+    else
+        reco_count = reco_count+1
+    endif
+end do
+rewind(3)
+
+if (C_PLINK) then
+    read(3,*,iostat=io_stat) chr,marker,reco(1,1),position
+else
+    read(3,*,iostat=io_stat) chr,marker,position,reco(1,:)
+endif
+
+do J=1,k
+    reco_count1=reco_count1+ceiling(log10(reco(1,k)+1))
+enddo
+reco_count=reco_count-len_trim(ADJUSTL(marker))-ceiling(log10(chr+1.0))-ceiling(log10(position+1.0))-3-(k-1)
+rewind(3)
+
+if(reco_count/=k) colrec_ex_status=.TRUE.
+
 do I=1,n_snp
     if (C_PLINK) then
-        read(3,*,iostat=io_stat) chr,marker,reco(I,1),position ! aqui
+        read(3,*,iostat=io_stat) chr,marker,reco(I,1),position
     else
 		read(3,*,iostat=io_stat) chr,marker,position,reco(I,:)
 	endif
@@ -223,15 +247,9 @@ do I=1,n_snp
     endif
     pos_before=position
     chr_before=chr
-    reco_count1=reco_count1+1
-
-    if(reco(I,k)==1) then;
-        reco_count=reco_count+1
-    endif
     reco_before=reco(I,:)
-    enddo
+enddo
 deallocate(reco_before)
-if(reco_count==n_snp .or. reco_count1<n_snp) colrec_ex_status=.TRUE.
 
 n_snp_G=0;br=0; nc_PED=0 
 do
@@ -266,19 +284,30 @@ enddo
 call print_inf()
 call warnings()
 
+if (ntraits==1 .and.C_gamecovar) then
+    C_gamecovar=.false.
+    print *
+    print*,'*------------------  WARNING ---------------------------------*'
+    print*
+print*,'gamevar.90 can not calculate the (co)variance gametic diversity (number of traits = 1)'
+    print*
+    print*,'*------------------------------------------------------------*'
+print*
+endif
+
 n_hap=0
 allocate(genotype(n_snp))
 allocate(genobefore(n_snp))
 if(C_PLINK) allocate(genotypeT(2*n_snp))
 
-allocate(ebv_results(ntraits))
-allocate(result_CRV(ntraits))
-allocate(result_HOM(ntraits))
-if ((C_crv .or. C_gamecovar) .and. .NOT.(C_gamecovar)) then
+if(C_ebv) allocate(ebv_results(ntraits))
+if(C_crv) allocate(result_CRV(ntraits))
+if(C_hom) allocate(result_HOM(ntraits))
+if ((C_crv .or. C_gamevar) .and. .NOT.(C_gamecovar)) then
     allocate(result_GAV(ntraits))
 endif
 
-if(C_gamecovar .or. C_crv) then
+if(C_gamecovar) then
     allocate(result_GAV(ntraits+(ntraits*ntraits-ntraits)/2))
 endif
 
@@ -586,7 +615,7 @@ print *
 print *
 print *,'DESCRIPTION:'
 print *
-print *,'Parameter File Readed:      ',parfile
+print *,'Parameter File Read:      ',parfile
 print *,'Number of SNPs:          ',n_snp
 print *,'Number of Allele Effects:',n_eff
 print *,'Number of Genotypes:     ',n_snp_G
@@ -698,7 +727,7 @@ if(.NOT. (exi_map) .OR. .NOT. (exi_alle) .OR. .NOT. (geno_exi) .OR. .NOT. (group
     endif
 
     print *
-    print*,'    gamevar.f90 has sttoped   '
+    print*,'    gamevar.f90 has been stopped   '
     print *
     print*,'*--------------------------------------------*'
     print *
@@ -714,10 +743,9 @@ subroutine warnings()
 
 implicit none
 
-logical::wa_nsnp=.FALSE.,wa_nani=.FALSE.,wa_geno=.FALSE.
+logical::wa_nsnp=.FALSE.,wa_geno=.FALSE.
 
 if(n_snp/=n_eff) wa_nsnp=.TRUE.
-if(n_anim/=(n_hap/2)) wa_nani=.TRUE.
 if(n_snp_G/=n_snp) wa_geno=.TRUE.
 
 if(wa_nsnp .OR. wa_nsnp .OR. nsort_status .OR. dchr_status .OR. nsort_rec_status &
@@ -726,14 +754,8 @@ if(wa_nsnp .OR. wa_nsnp .OR. nsort_status .OR. dchr_status .OR. nsort_rec_status
     print*,'*------------------  WARNING ---------------------------------*'
     print *
     if(wa_nsnp) then
-        print *,'Number of SNP and effects are diferent'
+        print *,'Number of SNP and effects are different'
         print *,map_imput,'=',n_snp,' and ',allele_imput,'=',n_eff
-        print *
-    end if
-    if(wa_nani) then
-        print *
-        print *,'Number of individuals with haplotypes are diferent'
-        print *,re_group_imput,'=',n_anim,' and ',geno_imput,'=',n_hap/2
         print *
     end if
 
@@ -757,7 +779,7 @@ if(wa_nsnp .OR. wa_nsnp .OR. nsort_status .OR. dchr_status .OR. nsort_rec_status
 
     if (colrec_ex_status) then
         print *
-        print*,'Number of recombination columns exceeds the number of recombination groups!'
+        print*,'Number of recombination columns is different of the number of recombination groups!'
         print *
     endif
 
@@ -775,12 +797,12 @@ if(wa_nsnp .OR. wa_nsnp .OR. nsort_status .OR. dchr_status .OR. nsort_rec_status
 
     if (wa_geno) then
         print *
-        print*,'Number of SNPs and genotypes are diferent!'
+        print*,'Number of SNPs and genotypes are different!'
         print *,map_imput,'=',n_snp,' and ',geno_imput,'=',n_snp_G
         print *
     endif
 
-    print*,'    gamevar.f90 has sttoped   '
+    print*,'    gamevar.f90 has been stopped   '
     print *
     print*,'*------------------------------------------------------------*'
     print *
@@ -794,7 +816,7 @@ if ((C_crv .or. C_gamevar .or. C_gamecovar) .and. .not. C_reco) then
     print *
     print*,'   Genetic Unit is required for Variance of Gametic Diversity or CRV Calculation!'
     print *
-    print*,'    gamevar.f90 has sttoped   '
+    print*,'    gamevar.f90 has been stopped   '
     print *
     print*,'*------------------------------------------------------------*'
     print *
@@ -829,13 +851,14 @@ do i=1,ntraits
 enddo
 
 if (C_gamecovar) then
-   if (ntraits<10) then
-   	allocate(character(len=((ntraits*ntraits-ntraits)/2)*10-1)::te_pp)
-   else if (ntraits<100) then
+	if (ntraits<10) then
+        allocate(character(len=((ntraits*ntraits-ntraits)/2)*10-1)::te_pp)
+    else if (ntraits<100) then
 allocate(character(len=((ntraits*ntraits-ntraits)/2)*8-1+((ntraits-1)*9)+2*((ntraits-1)*(ntraits-9)))::te_pp)
-   else
-   	print *, 'More than 100 TRAITS => ERROR'
-   endif
+    else
+        print *, 'More than 100 TRAITS => ERROR'
+    endif
+
     fi=0
     do i=1,(ntraits-1)
         do j=(i+1),ntraits
@@ -888,5 +911,4 @@ enddo
 end subroutine reco_matrix
 
 end program gamevar
-
 
