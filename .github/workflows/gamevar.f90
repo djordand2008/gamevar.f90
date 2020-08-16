@@ -119,9 +119,9 @@ if(n_snp==0 .or. n_eff==0 .or. n_snp/=n_eff) then
 	print *
 	print*,'*------------------  WARNING -------------------------------*'
 	print *
-        if(n_snp==0) print*,'    Problem to read the SNP file   '
-	if(n_eff==0) print*,'    Problem to read the allele effects file   '
-	if(n_snp/=n_eff) print*,'    Numbers of loci with effects and SNPs are different   '
+        if(n_snp==0) print*,'    Problem reading SNP file   '
+	if(n_eff==0) print*,'    Problem reading allele effects file   '
+	if(n_snp/=n_eff) print*,'    Numbers of loci with effects and numbers of SNPs are different   '
 	print *
 	print*,'    gamevar.f90 has been stopped    '
 	print *
@@ -536,7 +536,7 @@ if(C_PLINK) then
 endif
 deallocate(reco_matrix_resu)
 print *
-print *,'Number of Haplotypes analysed:....................',n_hap
+print *,'Number of Haplotypes analyzed:....................',n_hap
 
 print *
 print *, 'Outputs:'
@@ -888,7 +888,7 @@ subroutine reco_matrix(qlq,reco_x)
 implicit none
 
 integer::d1,d2,qlq,deno=0
-character(6)::reco_x
+character(7)::reco_x
 
 if (reco_x=='reco') deno=2
 if (reco_x=='morgans') deno=200
@@ -899,7 +899,7 @@ if (k<7) print*,"Calculating recombination matrix ........... group",qlq
 do d1=1,n_snp
     do d2=1,n_snp
         if(d1/=d2) then
-            if ((sqrt((reco(d1,qlq)-reco(d2,qlq))**2))>=0.50) then
+            if ((sqrt((reco(d1,qlq)-reco(d2,qlq))**2)/(deno/2))>=0.50) then
                 reco_mat_k(d1,d2)=0
             else
                 reco_mat_k(d1,d2)=(-(sqrt((reco(d1,qlq)-reco(d2,qlq))**2)/deno))+0.25
